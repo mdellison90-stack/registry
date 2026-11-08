@@ -21,6 +21,30 @@ func TestValidateMCPB(t *testing.T) {
 		errorMessage string
 	}{
 		{
+			name:         "empty package identifier should fail",
+			packageName:  "",
+			serverName:   "com.example/test",
+			fileSHA256:   "abc123ef4567890abcdef1234567890abcdef1234567890abcdef1234567890",
+			expectError:  true,
+			errorMessage: "package identifier is required for MCPB packages",
+		},
+		{
+			name:         "empty file SHA256 should fail",
+			packageName:  "https://github.com/example/server/releases/download/v1.0.0/server.mcpb",
+			serverName:   "com.example/test",
+			fileSHA256:   "",
+			expectError:  true,
+			errorMessage: "must include a fileSha256 hash for integrity verification",
+		},
+		{
+			name:         "both empty identifier and file SHA256 should fail with file SHA256 error first",
+			packageName:  "",
+			serverName:   "com.example/test",
+			fileSHA256:   "",
+			expectError:  true,
+			errorMessage: "must include a fileSha256 hash for integrity verification",
+		},
+		{
 			name:        "valid MCPB package should pass",
 			packageName: "https://github.com/domdomegg/airtable-mcp-server/releases/download/v1.7.2/airtable-mcp-server.mcpb",
 			serverName:  "io.github.domdomegg/airtable-mcp-server",
@@ -85,6 +109,73 @@ func TestValidateMCPB(t *testing.T) {
 			}
 
 			err := registries.ValidateMCPB(ctx, pkg, tt.serverName)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMessage)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateMCPB_OptionalFields(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name         string
+		pkg          model.Package
+		expectError  bool
+		errorMessage string
+	}{
+		{
+			name: "MCPB package with optional version field should pass",
+			pkg: model.Package{
+				RegistryType: model.RegistryTypeMCPB,
+				Identifier:   "https://github.com/domdomegg/airtable-mcp-server/releases/download/v1.7.2/airtable-mcp-server.mcpb",
+				Version:      "1.7.2",
+				FileSHA256:   "8220de07a08ebe908f04da139ea03dbfe29758141347e945da60535fb7bcca20",
+			},
+			expectError: false,
+		},
+		{
+			name: "MCPB package without version field should pass",
+			pkg: model.Package{
+				RegistryType: model.RegistryTypeMCPB,
+				Identifier:   "https://github.com/domdomegg/airtable-mcp-server/releases/download/v1.7.2/airtable-mcp-server.mcpb",
+				FileSHA256:   "8220de07a08ebe908f04da139ea03dbfe29758141347e945da60535fb7bcca20",
+			},
+			expectError: false,
+		},
+		{
+			name: "MCPB package with registryBaseUrl should be rejected",
+			pkg: model.Package{
+				RegistryType:    model.RegistryTypeMCPB,
+				Identifier:      "https://github.com/domdomegg/airtable-mcp-server/releases/download/v1.7.2/airtable-mcp-server.mcpb",
+				RegistryBaseURL: "https://github.com",
+				FileSHA256:      "8220de07a08ebe908f04da139ea03dbfe29758141347e945da60535fb7bcca20",
+			},
+			expectError:  true,
+			errorMessage: "MCPB packages must not have 'registryBaseUrl' field",
+		},
+		{
+			name: "MCPB package with both version and registryBaseUrl should fail on registryBaseUrl",
+			pkg: model.Package{
+				RegistryType:    model.RegistryTypeMCPB,
+				Identifier:      "https://github.com/domdomegg/airtable-mcp-server/releases/download/v1.7.2/airtable-mcp-server.mcpb",
+				Version:         "1.7.2",
+				RegistryBaseURL: "https://github.com",
+				FileSHA256:      "8220de07a08ebe908f04da139ea03dbfe29758141347e945da60535fb7bcca20",
+			},
+			expectError:  true,
+			errorMessage: "MCPB packages must not have 'registryBaseUrl' field",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := registries.ValidateMCPB(ctx, tt.pkg, "io.github.domdomegg/airtable-mcp-server")
 
 			if tt.expectError {
 				assert.Error(t, err)

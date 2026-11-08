@@ -9,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/registry/internal/auth"
 	"github.com/modelcontextprotocol/registry/internal/config"
 	"github.com/modelcontextprotocol/registry/internal/service"
+	"github.com/modelcontextprotocol/registry/internal/validators"
 	apiv0 "github.com/modelcontextprotocol/registry/pkg/api/v0"
 )
 
@@ -18,22 +19,22 @@ type PublishServerInput struct {
 	Body          apiv0.ServerJSON `body:""`
 }
 
-// RegisterPublishEndpoint registers the publish endpoint
-func RegisterPublishEndpoint(api huma.API, registry service.RegistryService, cfg *config.Config) {
+// RegisterPublishEndpoint registers the publish endpoint with a custom path prefix
+func RegisterPublishEndpoint(api huma.API, pathPrefix string, registry service.RegistryService, cfg *config.Config) {
 	// Create JWT manager for token validation
 	jwtManager := auth.NewJWTManager(cfg)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "publish-server",
+		OperationID: "publish-server" + strings.ReplaceAll(pathPrefix, "/", "-"),
 		Method:      http.MethodPost,
-		Path:        "/v0/publish",
+		Path:        pathPrefix + "/publish",
 		Summary:     "Publish MCP server",
 		Description: "Publish a new MCP server to the registry or update an existing one",
 		Tags:        []string{"publish"},
 		Security: []map[string][]string{
 			{"bearer": {}},
 		},
-	}, func(ctx context.Context, input *PublishServerInput) (*Response[apiv0.ServerJSON], error) {
+	}, func(ctx context.Context, input *PublishServerInput) (*Response[apiv0.ServerResponse], error) {
 		// Extract bearer token
 		const bearerPrefix = "Bearer "
 		authHeader := input.Authorization
@@ -53,14 +54,20 @@ func RegisterPublishEndpoint(api huma.API, registry service.RegistryService, cfg
 			return nil, huma.Error403Forbidden(buildPermissionErrorMessage(input.Body.Name, claims.Permissions))
 		}
 
+		// Validate server JSON structure and schema (returns 422 on validation failure)
+		validationResult := validators.ValidateServerJSON(&input.Body, validators.ValidationSchemaVersionAndSemantic)
+		if !validationResult.Valid {
+			return nil, huma.Error422UnprocessableEntity("Failed to publish server, invalid schema: call /validate for details")
+		}
+
 		// Publish the server with extensions
-		publishedServer, err := registry.Publish(input.Body)
+		publishedServer, err := registry.CreateServer(ctx, &input.Body)
 		if err != nil {
 			return nil, huma.Error400BadRequest("Failed to publish server", err)
 		}
 
-		// Return the published server in flattened format
-		return &Response[apiv0.ServerJSON]{
+		// Return the published server response with metadata
+		return &Response[apiv0.ServerResponse]{
 			Body: *publishedServer,
 		}, nil
 	})
@@ -75,7 +82,7 @@ func buildPermissionErrorMessage(attemptedResource string, permissions []auth.Pe
 			permissionStrs = append(permissionStrs, perm.ResourcePattern)
 		}
 	}
-	
+
 	errorMsg := "You do not have permission to publish this server"
 	if len(permissionStrs) > 0 {
 		errorMsg += ". You have permission to publish: " + strings.Join(permissionStrs, ", ")
@@ -83,6 +90,11 @@ func buildPermissionErrorMessage(attemptedResource string, permissions []auth.Pe
 		errorMsg += ". You do not have any publish permissions"
 	}
 	errorMsg += ". Attempting to publish: " + attemptedResource
-	
+
+	// Add helpful hint for GitHub organization publishing issues
+	if strings.HasPrefix(attemptedResource, "io.github.") {
+		errorMsg += ". If you're trying to publish to a GitHub organization, you may need to make your organization membership public in your GitHub settings: https://docs.github.com/en/account-and-profile/how-tos/organization-membership/publicizing-or-hiding-organization-membership"
+	}
+
 	return errorMsg
 }

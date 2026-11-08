@@ -13,8 +13,9 @@ var (
 	ErrReservedVersionString = errors.New("version string 'latest' is reserved and cannot be used")
 	ErrVersionLooksLikeRange = errors.New("version must be a specific version, not a range")
 
-	// Remote validation errors
-	ErrInvalidRemoteURL = errors.New("invalid remote URL")
+	// Transport validation errors
+	ErrInvalidPackageTransportURL = errors.New("invalid package transport URL")
+	ErrInvalidRemoteURL           = errors.New("invalid remote URL")
 
 	// Registry validation errors
 	ErrUnsupportedRegistryBaseURL   = errors.New("unsupported registry base URL")
@@ -28,6 +29,7 @@ var (
 
 	// Server name validation errors
 	ErrMultipleSlashesInServerName = errors.New("server name cannot contain multiple slashes")
+	ErrInvalidServerNameFormat     = errors.New("server name format is invalid")
 )
 
 // RepositorySource represents valid repository sources
@@ -36,4 +38,8 @@ type RepositorySource string
 const (
 	SourceGitHub RepositorySource = "github"
 	SourceGitLab RepositorySource = "gitlab"
+)
+
+const (
+	SchemeHTTPS = "https"
 )

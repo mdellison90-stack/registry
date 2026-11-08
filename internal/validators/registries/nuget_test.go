@@ -21,12 +21,36 @@ func TestValidateNuGet_RealPackages(t *testing.T) {
 		errorMessage string
 	}{
 		{
-			name:         "non-existent package should fail",
-			packageName:  generateRandomNuGetPackageName(),
+			name:         "empty package identifier should fail",
+			packageName:  "",
 			version:      "1.0.0",
 			serverName:   "com.example/test",
 			expectError:  true,
-			errorMessage: "ownership validation failed",
+			errorMessage: "package identifier is required for NuGet packages",
+		},
+		{
+			name:         "empty package version should fail",
+			packageName:  "test-package",
+			version:      "",
+			serverName:   "com.example/test",
+			expectError:  true,
+			errorMessage: "package version is required for NuGet packages",
+		},
+		{
+			name:         "both empty identifier and version should fail with identifier error first",
+			packageName:  "",
+			version:      "",
+			serverName:   "com.example/test",
+			expectError:  true,
+			errorMessage: "package identifier is required for NuGet packages",
+		},
+		{
+			name:         "non-existent package should fail",
+			packageName:  "will--never--exist",
+			version:      "1.0.0",
+			serverName:   "com.example/test",
+			expectError:  true,
+			errorMessage: "NuGet package 'will--never--exist' does not exist in the registry",
 		},
 		{
 			name:         "real package without version should fail",
@@ -34,7 +58,7 @@ func TestValidateNuGet_RealPackages(t *testing.T) {
 			version:      "", // No version provided
 			serverName:   "com.example/test",
 			expectError:  true,
-			errorMessage: "requires a specific version",
+			errorMessage: "package version is required for NuGet packages",
 		},
 		{
 			name:         "real package with non-existent version should fail",
@@ -42,7 +66,15 @@ func TestValidateNuGet_RealPackages(t *testing.T) {
 			version:      "999.999.999", // Version that doesn't exist
 			serverName:   "com.example/test",
 			expectError:  true,
-			errorMessage: "ownership validation failed",
+			errorMessage: "exists but version 999.999.999 does not exist in the registry",
+		},
+		{
+			name:         "real package with non-existent version should fail",
+			packageName:  "Newtonsoft.Json",
+			version:      "6.0.1", // README doesn't exist
+			serverName:   "com.example/test",
+			expectError:  true,
+			errorMessage: "because it does not have an embedded README",
 		},
 		{
 			name:         "real package without server name in README should fail",
@@ -50,7 +82,7 @@ func TestValidateNuGet_RealPackages(t *testing.T) {
 			version:      "13.0.3", // Popular version
 			serverName:   "com.example/test",
 			expectError:  true,
-			errorMessage: "ownership validation failed",
+			errorMessage: "The server name 'com.example/test' must appear as 'mcp-name: com.example/test' in the package README.",
 		},
 		{
 			name:         "real package without server name in README should fail",
@@ -58,7 +90,7 @@ func TestValidateNuGet_RealPackages(t *testing.T) {
 			version:      "1.0.0",
 			serverName:   "io.github.domdomegg/time-mcp-server",
 			expectError:  true,
-			errorMessage: "ownership validation failed",
+			errorMessage: "ownership validation for version",
 		},
 		{
 			name:        "real package with server name in README should pass",

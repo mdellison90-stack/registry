@@ -32,6 +32,14 @@ func DeployMCPRegistry(ctx *pulumi.Context, cluster *providers.ProviderInfo, env
 	conf := config.New(ctx, "mcp-registry")
 	githubClientId := conf.Require("githubClientId")
 
+	// Determine Docker image tag based on environment
+	imageTag := "main" // Default for staging
+	if environment == "prod" {
+		// Use explicitly configured image tag for production
+		// This prevents automatic promotion and requires manual control of production releases
+		imageTag = conf.Require("imageTag") // Explicit configuration required - no fallback
+	}
+
 	// Create Secret with sensitive configuration
 	secret, err := corev1.NewSecret(ctx, "mcp-registry-secrets", &corev1.SecretArgs{
 		Metadata: &metav1.ObjectMetaArgs{
@@ -64,6 +72,13 @@ func DeployMCPRegistry(ctx *pulumi.Context, cluster *providers.ProviderInfo, env
 		},
 		Spec: &v1.DeploymentSpecArgs{
 			Replicas: pulumi.Int(2),
+			Strategy: &v1.DeploymentStrategyArgs{
+				Type: pulumi.String("RollingUpdate"),
+				RollingUpdate: &v1.RollingUpdateDeploymentArgs{
+					MaxUnavailable: pulumi.IntPtr(0), // Never reduce capacity during updates
+					MaxSurge:       pulumi.IntPtr(1), // Create new pods first, then terminate old
+				},
+			},
 			Selector: &metav1.LabelSelectorArgs{
 				MatchLabels: pulumi.StringMap{
 					"app": pulumi.String("mcp-registry"),
@@ -83,7 +98,7 @@ func DeployMCPRegistry(ctx *pulumi.Context, cluster *providers.ProviderInfo, env
 					Containers: corev1.ContainerArray{
 						&corev1.ContainerArgs{
 							Name:            pulumi.String("mcp-registry"),
-							Image:           pulumi.String("ghcr.io/modelcontextprotocol/registry:main"),
+							Image:           pulumi.Sprintf("ghcr.io/modelcontextprotocol/registry:%s", imageTag),
 							ImagePullPolicy: pulumi.String("Always"),
 							Ports: corev1.ContainerPortArray{
 								&corev1.ContainerPortArgs{
@@ -238,6 +253,11 @@ func DeployMCPRegistry(ctx *pulumi.Context, cluster *providers.ProviderInfo, env
 			Annotations: pulumi.StringMap{
 				"cert-manager.io/cluster-issuer": pulumi.String("letsencrypt-prod"),
 				"kubernetes.io/ingress.class":    pulumi.String("nginx"),
+			// Rate limiting to protect against abuse
+			// Allows 180 requests/minute (3 req/sec avg), with bursts up to 540 requests
+			// Status code 429 is set globally via NGINX ConfigMap (per-Ingress annotation doesn't work)
+			"nginx.ingress.kubernetes.io/limit-rpm":              pulumi.String("180"),
+			"nginx.ingress.kubernetes.io/limit-burst-multiplier": pulumi.String("3"),
 			},
 		},
 		Spec: &networkingv1.IngressSpecArgs{

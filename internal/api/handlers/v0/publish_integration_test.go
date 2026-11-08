@@ -53,13 +53,14 @@ func TestPublishIntegration(t *testing.T) {
 	api := humago.New(mux, huma.DefaultConfig("Test API", "1.0.0"))
 
 	// Register the endpoint
-	v0.RegisterPublishEndpoint(api, registryService, testConfig)
+	v0.RegisterPublishEndpoint(api, "/v0", registryService, testConfig)
 
 	t.Run("successful publish with GitHub auth", func(t *testing.T) {
 		publishReq := apiv0.ServerJSON{
+			Schema:      model.CurrentSchemaURL,
 			Name:        "io.github.testuser/test-mcp-server",
 			Description: "A test MCP server for integration testing",
-			Repository: model.Repository{
+			Repository: &model.Repository{
 				URL:    "https://github.com/testuser/test-mcp-server",
 				Source: "github",
 				ID:     "testuser/test-mcp-server",
@@ -90,19 +91,21 @@ func TestPublishIntegration(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rr.Code)
 
-		var response apiv0.ServerJSON
+		var response apiv0.ServerResponse
 		err = json.Unmarshal(rr.Body.Bytes(), &response)
 		require.NoError(t, err)
 
-		assert.Equal(t, publishReq.Name, response.Name)
-		assert.Equal(t, publishReq.Version, response.Version)
+		assert.Equal(t, publishReq.Name, response.Server.Name)
+		assert.Equal(t, publishReq.Version, response.Server.Version)
+		assert.NotNil(t, response.Meta.Official)
 	})
 
 	t.Run("successful publish with none auth (no prefix)", func(t *testing.T) {
 		publishReq := apiv0.ServerJSON{
+			Schema:      model.CurrentSchemaURL,
 			Name:        "com.example/test-mcp-server-no-auth",
 			Description: "A test MCP server without authentication",
-			Repository: model.Repository{
+			Repository: &model.Repository{
 				URL:    "https://github.com/example/test-server",
 				Source: "github",
 				ID:     "example/test-server",
@@ -132,16 +135,18 @@ func TestPublishIntegration(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rr.Code)
 
-		var response apiv0.ServerJSON
+		var response apiv0.ServerResponse
 		err = json.Unmarshal(rr.Body.Bytes(), &response)
 		require.NoError(t, err)
 
-		assert.Equal(t, publishReq.Name, response.Name)
+		assert.Equal(t, publishReq.Name, response.Server.Name)
+		assert.NotNil(t, response.Meta.Official)
 	})
 
 	t.Run("publish fails with missing authorization header", func(t *testing.T) {
 		publishReq := apiv0.ServerJSON{
-			Name: "test-server",
+			Schema: model.CurrentSchemaURL,
+			Name:   "test-server",
 		}
 
 		body, err := json.Marshal(publishReq)
@@ -160,9 +165,10 @@ func TestPublishIntegration(t *testing.T) {
 
 	t.Run("publish fails with invalid token", func(t *testing.T) {
 		publishReq := apiv0.ServerJSON{
-			Name:          "io.github.domdomegg/test-server",
-			Description:   "Test server",
-			Version: "1.0.0",
+			Schema:      model.CurrentSchemaURL,
+			Name:        "io.github.domdomegg/test-server",
+			Description: "Test server",
+			Version:     "1.0.0",
 		}
 
 		body, err := json.Marshal(publishReq)
@@ -181,10 +187,11 @@ func TestPublishIntegration(t *testing.T) {
 
 	t.Run("publish fails when permission denied", func(t *testing.T) {
 		publishReq := apiv0.ServerJSON{
+			Schema:      model.CurrentSchemaURL,
 			Name:        "io.github.other/test-server",
 			Description: "A test server",
-			Version: "1.0.0",
-			Repository: model.Repository{
+			Version:     "1.0.0",
+			Repository: &model.Repository{
 				URL:    "https://github.com/example/test-server",
 				Source: "github",
 				ID:     "example/test-server",
@@ -217,10 +224,10 @@ func TestPublishIntegration(t *testing.T) {
 
 	t.Run("publish succeeds with MCPB package", func(t *testing.T) {
 		publishReq := apiv0.ServerJSON{
+			Schema:      model.CurrentSchemaURL,
 			Name:        "io.github.domdomegg/airtable-mcp-server",
 			Description: "A test server with MCPB package",
-			Version: "1.7.2",
-			Status: model.StatusActive,
+			Version:     "1.7.2",
 			Packages: []model.Package{
 				{
 					RegistryType: model.RegistryTypeMCPB,
@@ -256,13 +263,14 @@ func TestPublishIntegration(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rr.Code)
 
-		var response apiv0.ServerJSON
+		var response apiv0.ServerResponse
 		err = json.Unmarshal(rr.Body.Bytes(), &response)
 		require.NoError(t, err)
 
-		assert.Equal(t, publishReq.Name, response.Name)
-		assert.Equal(t, publishReq.Version, response.Version)
-		assert.Len(t, response.Packages, 1)
-		assert.Equal(t, model.RegistryTypeMCPB, response.Packages[0].RegistryType)
+		assert.Equal(t, publishReq.Name, response.Server.Name)
+		assert.Equal(t, publishReq.Version, response.Server.Version)
+		assert.NotNil(t, response.Meta.Official)
+		assert.Len(t, response.Server.Packages, 1)
+		assert.Equal(t, model.RegistryTypeMCPB, response.Server.Packages[0].RegistryType)
 	})
 }

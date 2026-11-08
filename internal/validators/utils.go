@@ -35,7 +35,7 @@ func HasNoSpaces(s string) bool {
 func extractTemplateVariables(url string) []string {
 	re := regexp.MustCompile(`\{([^}]+)\}`)
 	matches := re.FindAllStringSubmatch(url, -1)
-	
+
 	var variables []string
 	for _, match := range matches {
 		if len(match) > 1 {
@@ -55,16 +55,22 @@ func replaceTemplateVariables(rawURL string) string {
 		"{protocol}": "http",
 		"{scheme}":   "http",
 	}
-	
+
 	result := rawURL
 	for placeholder, replacement := range templateReplacements {
 		result = strings.ReplaceAll(result, placeholder, replacement)
 	}
-	
-	// Handle any remaining {variable} patterns with generic placeholder
+
+	// Handle any remaining {variable} patterns with context-appropriate placeholders
+	// If the variable is in a port position (after a colon in the host), use a numeric placeholder
+	// Pattern: :/{variable} or :{variable}/ or :{variable} at end
+	portRe := regexp.MustCompile(`:(\{[^}]+\})(/|$)`)
+	result = portRe.ReplaceAllString(result, ":8080$2")
+
+	// Replace any other remaining {variable} patterns with generic placeholder
 	re := regexp.MustCompile(`\{[^}]+\}`)
 	result = re.ReplaceAllString(result, "placeholder")
-	
+
 	return result
 }
 
@@ -72,7 +78,7 @@ func replaceTemplateVariables(rawURL string) string {
 func IsValidURL(rawURL string) bool {
 	// Replace template variables with placeholders for parsing
 	testURL := replaceTemplateVariables(rawURL)
-	
+
 	// Parse the URL
 	u, err := url.Parse(testURL)
 	if err != nil {
@@ -131,55 +137,57 @@ func IsValidRemoteURL(rawURL string) bool {
 	if !IsValidURL(rawURL) {
 		return false
 	}
-	
+
+	// Replace template variables with placeholders before parsing for localhost check
+	testURL := replaceTemplateVariables(rawURL)
+
 	// Parse the URL to check for localhost restriction
-	u, err := url.Parse(rawURL)
+	u, err := url.Parse(testURL)
 	if err != nil {
 		return false
 	}
-	
+
 	// Reject localhost URLs for remotes (security/production concerns)
 	hostname := u.Hostname()
 	if hostname == "localhost" || hostname == "127.0.0.1" || strings.HasSuffix(hostname, ".localhost") {
 		return false
 	}
-	
+
+	if u.Scheme != "https" {
+		return false
+	}
+
 	return true
 }
 
 // IsValidTemplatedURL validates a URL with template variables against available variables
 // For packages: validates that template variables reference package arguments or environment variables
-// For remotes: disallows template variables entirely
-func IsValidTemplatedURL(rawURL string, availableVariables []string, allowTemplates bool) bool {
+// For remotes: validates that template variables reference the transport's variables map
+func IsValidTemplatedURL(rawURL string, availableVariables []string) bool {
 	// First check basic URL structure
 	if !IsValidURL(rawURL) {
 		return false
 	}
-	
+
 	// Extract template variables from URL
 	templateVars := extractTemplateVariables(rawURL)
-	
+
 	// If no templates are found, it's a valid static URL
 	if len(templateVars) == 0 {
 		return true
 	}
-	
-	// If templates are not allowed (e.g., for remotes), reject URLs with templates
-	if !allowTemplates {
-		return false
-	}
-	
+
 	// Validate that all template variables are available
 	availableSet := make(map[string]bool)
 	for _, v := range availableVariables {
 		availableSet[v] = true
 	}
-	
+
 	for _, templateVar := range templateVars {
 		if !availableSet[templateVar] {
 			return false
 		}
 	}
-	
+
 	return true
 }
